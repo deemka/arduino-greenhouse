@@ -11,13 +11,12 @@ DallasTemperature sensors(&oneWire);
 Servo             servo;
 
 float t_meas;
-int const t_crit[] = {25, 27, 40};
+int const t_crit[] = {26, 28, 40};
 int NUM_OF_BINS = 0;
-int mode = -1;
-int prev_mode = 0;
+int temp_level = -1;
+int prev_temp_level = 0;
+String mode;
 
-const char* modes_breadmachine[] = {"Heizung An", "Alles Aus", "Luftung An"};
-    
 int get_bin_index(int const ranges[], int meas)
 {
     int i;
@@ -29,21 +28,32 @@ int get_bin_index(int const ranges[], int meas)
     return i;
 }
 
-void servo_handler(const int mode)
+void servo_handler(const int temp_level)
 {
     servo.attach(SERVO_PIN);
-    servo.write(mode * 60);
+    servo.write(temp_level * 60);
     delay(1000);
     servo.detach();
 }
 
-void relais_handler(const int mode)
+void relais_handler(const int temp_level)
 {
-    switch (mode) {
+    switch (temp_level) {
     case 0:
-	digitalWrite(RELAIS_PIN, HIGH);
+	digitalWrite(RELAIS_PIN, HIGH);     /* T < Tmin */
+	mode = "Heizung An";
 	break;
     case 1:
+	if (temp_level > prev_temp_level) {
+	    mode = "Heizung An";
+	    digitalWrite(RELAIS_PIN, HIGH); /* Tmin < T < Tmax, increasing, keep heating */
+	} else {
+	    mode = "Heizung Aus";
+	    digitalWrite(RELAIS_PIN, LOW);  /* Tmin < T < Tmax, decreasing, stop heating */
+	}
+	break;
+    case 2:
+	mode = "Heizung Aus";
 	digitalWrite(RELAIS_PIN, LOW);
 	break;
     }
@@ -63,19 +73,18 @@ void loop(void)
 {
     sensors.requestTemperatures();
     t_meas = sensors.getTempCByIndex(0);
-    Serial.print("T = ");
-    Serial.print(int(t_meas + .5));
-    Serial.print(" C (Stufe ");
 
-    prev_mode = mode;
-    mode = get_bin_index(t_crit, int(t_meas + .5));
-    Serial.print(mode);
-    Serial.print("), ");
-    Serial.println(modes_breadmachine[mode]);
-    
-    if (mode != prev_mode) {
-	relais_handler(mode);
+    prev_temp_level = temp_level;
+    temp_level = get_bin_index(t_crit, int(t_meas + .5));
+
+    if (temp_level != prev_temp_level) {
+	relais_handler(temp_level);
     }
 
+    Serial.print("T = ");
+    Serial.print(int(t_meas + .5));
+    Serial.print(" C, ");
+    Serial.println(mode);
+    
     delay(1000);
 }
